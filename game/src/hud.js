@@ -1,9 +1,11 @@
-// DAWNLINE — the instruments: DOM tapes and bars around the screen, and
-// the lit gauge panel the cockpit camera looks over. Altitude, speed and
-// heading are always on show; fuel and damage sit where a pilot glances.
+// DAWNLINE — the head-up instruments: DOM tapes and bars around the screen
+// plus the canyon minimap. Altitude, speed and heading are always on show;
+// fuel and damage sit where a pilot glances. The lit panel gauges live in
+// cockpit-instruments.js.
 
 import * as THREE from 'three';
-import { headingDegrees } from './aircraft.js';
+import { headingDegrees } from './flight-model.js';
+import { WORLD, STRIPS, BEACON } from './config.js';
 
 export function makeHud() {
   const el = (id) => document.getElementById(id);
@@ -58,45 +60,73 @@ export function makeHud() {
   };
 }
 
-// The cockpit gauge faces, drawn on a canvas the panel wears as a texture:
-// airspeed, altimeter and heading dials with needles that move with the plane.
-export function makeGaugePanel() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512; canvas.height = 192;
-  const g = canvas.getContext('2d');
-  const texture = new THREE.CanvasTexture(canvas);
-  let frame = 0;
+// The canyon minimap: terrain shading baked once, then strips, rings,
+// the beacon and the plane drawn over it each refresh. North (-Z) is up.
 
-  function dial(cx, cy, r, value, max, label, unit) {
-    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2);
-    g.fillStyle = '#101418'; g.fill();
-    g.lineWidth = 3; g.strokeStyle = '#c8b98a'; g.stroke();
-    for (let i = 0; i <= 10; i++) {
-      const a = Math.PI * 0.75 + (i / 10) * Math.PI * 1.5;
-      g.beginPath();
-      g.moveTo(cx + Math.cos(a) * (r - 8), cy + Math.sin(a) * (r - 8));
-      g.lineTo(cx + Math.cos(a) * (r - 2), cy + Math.sin(a) * (r - 2));
-      g.lineWidth = 2; g.strokeStyle = '#e8dcc0'; g.stroke();
+export function makeMinimap(heightAt) {
+  const canvas = document.getElementById('hud-map');
+  const g = canvas.getContext('2d');
+  const SIZE = canvas.width;
+  const half = WORLD.size / 2;
+  const toPx = (x) => ((x + half) / WORLD.size) * SIZE;
+  const toPy = (z) => ((z + half) / WORLD.size) * SIZE;
+
+  const baked = document.createElement('canvas');
+  baked.width = SIZE; baked.height = SIZE;
+  const bg = baked.getContext('2d');
+  const cells = 56;
+  const cell = SIZE / cells;
+  for (let j = 0; j < cells; j++) {
+    for (let i = 0; i < cells; i++) {
+      const x = -half + ((i + 0.5) / cells) * WORLD.size;
+      const z = -half + ((j + 0.5) / cells) * WORLD.size;
+      const h = heightAt(x, z);
+      const t = Math.min(1, Math.max(0, (h + 40) / 220));
+      bg.fillStyle = `rgb(${Math.round(120 + t * 90)},${Math.round(82 + t * 52)},${Math.round(48 + t * 30)})`;
+      bg.fillRect(i * cell, j * cell, cell + 1, cell + 1);
     }
-    const a = Math.PI * 0.75 + Math.min(1, Math.max(0, value / max)) * Math.PI * 1.5;
-    g.beginPath();
-    g.moveTo(cx, cy);
-    g.lineTo(cx + Math.cos(a) * (r - 12), cy + Math.sin(a) * (r - 12));
-    g.lineWidth = 4; g.strokeStyle = '#ffb340'; g.stroke();
-    g.fillStyle = '#e8dcc0'; g.font = 'bold 15px Arial'; g.textAlign = 'center';
-    g.fillText(label, cx, cy + r - 16);
-    g.font = '11px Arial'; g.fillText(unit, cx, cy + r - 3);
   }
 
+  let frame = 0;
   return {
-    texture,
-    update(state, heightAboveGround) {
-      if (frame++ % 3 !== 0) return;
-      g.fillStyle = '#23211e'; g.fillRect(0, 0, 512, 192);
-      dial(92, 96, 78, state.speed * 3.6, 240, 'SPEED', 'km/h');
-      dial(256, 96, 78, Math.max(0, heightAboveGround), 600, 'ALTITUDE', 'metres');
-      dial(420, 96, 78, headingDegrees(state), 360, 'HEADING', 'degrees');
-      texture.needsUpdate = true;
+    draw(state, rings) {
+      if (frame++ % 4 !== 0) return;
+      g.drawImage(baked, 0, 0);
+      g.strokeStyle = 'rgba(245,233,213,0.5)';
+      g.strokeRect(0.5, 0.5, SIZE - 1, SIZE - 1);
+
+      for (const s of Object.values(STRIPS)) {
+        g.save();
+        g.translate(toPx(s.x), toPy(s.z));
+        g.rotate(-s.heading + Math.PI / 2);
+        g.fillStyle = '#f3e6cf';
+        g.fillRect(-(s.length / WORLD.size) * SIZE / 2, -1.2, (s.length / WORLD.size) * SIZE, 2.4);
+        g.restore();
+      }
+
+      for (const r of rings) {
+        const next = !r.passed && rings.find((q) => !q.passed) === r;
+        g.beginPath();
+        g.arc(toPx(r.centre.x), toPy(r.centre.z), next ? 4.5 : 3, 0, Math.PI * 2);
+        g.fillStyle = r.passed ? 'rgba(200,200,200,0.55)' : next ? '#7fd08a' : '#ffb340';
+        g.fill();
+      }
+
+      g.beginPath();
+      g.arc(toPx(BEACON.x), toPy(BEACON.z), 3.5, 0, Math.PI * 2);
+      g.fillStyle = '#ff5a3c';
+      g.fill();
+
+      const hdg = headingDegrees(state) * Math.PI / 180;
+      g.save();
+      g.translate(toPx(state.pos.x), toPy(state.pos.z));
+      g.rotate(Math.PI - hdg);
+      g.beginPath();
+      g.moveTo(0, -6); g.lineTo(4, 5); g.lineTo(0, 2.6); g.lineTo(-4, 5);
+      g.closePath();
+      g.fillStyle = '#ffffff';
+      g.fill();
+      g.restore();
     },
   };
 }

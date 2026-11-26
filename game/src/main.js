@@ -4,13 +4,15 @@
 
 import * as THREE from 'three';
 import { STRIPS, RINGS } from './config.js';
-import { buildWorld } from './world.js';
-import { buildAircraft, buildCockpitPanel, newFlightState, stepFlight } from './aircraft.js';
+import { buildWorld } from './terrain.js';
+import { buildAircraft, buildCockpitPanel } from './aircraft.js';
+import { newFlightState, stepFlight } from './flight-model.js';
 import { updateCamera } from './camera.js';
-import { makeHud, makeGaugePanel } from './hud.js';
+import { makeHud, makeMinimap } from './hud.js';
+import { makeGaugePanel } from './cockpit-instruments.js';
 import { makeMission } from './missions.js';
 import { makeInput } from './input.js';
-import { makeAudio } from './audio.js';
+import { makeAudio } from './sound.js';
 
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -28,6 +30,7 @@ const gauges = makeGaugePanel();
 plane.add(buildCockpitPanel(gauges.texture));
 
 const hud = makeHud();
+const minimap = makeMinimap(world.heightAt);
 const input = makeInput(canvas);
 const audio = makeAudio();
 const menu = document.getElementById('hud-menu');
@@ -74,21 +77,23 @@ function poseForShot(name) {
     obj.rotateZ(bank);
     return obj.quaternion.clone();
   };
-  if (name === 'cover') {
+  if (name === 'cover' || name === 'cockpit') {
+    // The cover: cockpit on final for Mesa Strip — lit dials, runway and
+    // the orange precision zone ahead, HUD tapes at the edges.
+    mission = makeMission('precision', world);
+    const s = STRIPS.mesa;
+    const along = stripAlong(s);
+    const y = world.heightAt(s.x, s.z);
+    state = newFlightState({ x: s.x - along.x * 260, y: y + 30, z: s.z - along.z * 260, heading: 0 });
+    state.quat = aim(state.pos, new THREE.Vector3(s.x, y + 2, s.z));
+    state.speed = 25; state.throttle = 0.42; state.onGround = false; state.fuel = 64;
+    cameraMode = 'cockpit';
+  } else if (name === 'chase') {
     mission = makeMission('rings', world);
     state = newFlightState({ x: -760, y: 158, z: 700, heading: 0 });
     state.quat = aim(state.pos, new THREE.Vector3(RINGS[1].x, RINGS[1].y, RINGS[1].z));
     state.speed = 34; state.throttle = 0.8; state.onGround = false; state.fuel = 86;
     cameraMode = 'chase';
-  } else if (name === 'cockpit') {
-    mission = makeMission('precision', world);
-    const s = STRIPS.mesa;
-    const along = stripAlong(s);
-    const y = world.heightAt(s.x, s.z);
-    state = newFlightState({ x: s.x - along.x * 300, y: y + 36, z: s.z - along.z * 300, heading: 0 });
-    state.quat = aim(state.pos, new THREE.Vector3(s.x, y + 2, s.z));
-    state.speed = 26; state.throttle = 0.42; state.onGround = false; state.fuel = 64;
-    cameraMode = 'cockpit';
   } else if (name === 'rings') {
     mission = makeMission('rings', world);
     mission.phase = 0;
@@ -164,6 +169,10 @@ function frame(now) {
     lowFuelWarned = now;
     audio.warning();
   }
+  if (state.stalled && now - lowFuelWarned > 1200) {
+    lowFuelWarned = now;
+    audio.warning();
+  }
 
   plane.position.copy(state.pos);
   plane.quaternion.copy(state.quat);
@@ -184,8 +193,9 @@ function frame(now) {
   hud.setRight([
     cameraMode === 'chase' ? 'CHASE CAMERA' : 'COCKPIT',
     targetLine,
-    state.onGround ? 'ON GROUND' : 'AIRBORNE',
+    state.crashed ? 'CRASHED' : state.stalled ? 'STALL — NOSE DOWN, POWER UP' : state.onGround ? 'ON GROUND' : 'AIRBORNE',
   ]);
+  minimap.draw(state, world.rings);
 
   renderer.render(scene, camera);
 }

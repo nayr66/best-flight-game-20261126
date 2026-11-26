@@ -27,11 +27,14 @@ that drains at throttle and damage that makes every landing a decision.
 - Static files under `game/`, no build step and no network request; three.js
   is vendored as `game/vendor/three.module.min.js`.
 - The game's own source is split one job per file under `game/src/`:
-  `config.js` (tunables), `world.js` (seeded canyon, strips, rings, beacon),
-  `aircraft.js` (the plane and its flight model), `camera.js` (chase and
-  cockpit), `hud.js` (tapes, gauges and the lit panel), `missions.js` (the
-  four sorties and scoring), `input.js` (keyboard and mouse), `audio.js`
-  (synthesised engine, wind and chimes), `main.js` (boot and the frame loop).
+  `config.js` (tunables), `terrain.js` (seeded canyon, strips, rings,
+  beacon), `aircraft.js` (the plane and its panel frame),
+  `flight-model.js` (lift, stall, banked turns, ground effect, arrivals),
+  `cockpit-instruments.js` (the lit dials: speed, altitude, horizon,
+  heading), `camera.js` (chase and cockpit), `hud.js` (tapes, bars and the
+  canyon minimap), `missions.js` (the four sorties and scoring),
+  `input.js` (keyboard and mouse), `sound.js` (synthesised engine, wind
+  and chimes), `main.js` (boot and the frame loop).
 - `main.ts` hands the entry in: it copies `game/` and `screenshots/` to
   `/output` and writes `/output/dossier.json` with the kit's
   `buildDossier`. Run it locally with

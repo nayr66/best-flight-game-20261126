@@ -44,6 +44,8 @@
   .sortie span { font-size: 12px; opacity: .88; line-height: 1.45; display: block; }
   #hud-menu .keys { margin-top: 24px; font-size: 12.5px; opacity: .9; text-align: center; line-height: 1.7; }
   #hud-score { top: 10px; right: 14px; text-align: right; font-size: 13px; line-height: 1.5; }
+  #hud-map { position: fixed; right: 14px; bottom: 96px; width: 168px; height: 168px;
+    border-radius: 6px; opacity: .92; pointer-events: none; }
   .hidden { display: none !important; }
 </style>
 <script type="importmap">
@@ -73,6 +75,7 @@
     <div class="bar" id="bar-throttle"><div style="width:0%"></div></div></div>
 </div>
 <div class="hud" id="hud-score"></div>
+<canvas id="hud-map" width="168" height="168"></canvas>
 <div class="hud" id="hud-right"></div>
 <div class="hud" id="hud-banner"></div>
 
